@@ -11,8 +11,10 @@ use serde_json::json;
 use ureq::OrAnyStatus;
 use url::Url;
 
+use crate::auth::Auth;
 use crate::payload::Payload;
 use crate::tui::Tui;
+use crate::Header;
 
 #[derive(Debug, Default)]
 pub struct Tries {
@@ -68,6 +70,7 @@ pub struct Fuzzer {
     url: Url,
     ignored_status_codes: Vec<u16>,
     extra_headers: Vec<(String, String)>,
+    auth: Option<Auth>,
     stats: Stats,
     tui: Tui,
 }
@@ -78,12 +81,14 @@ impl Fuzzer {
         url: Url,
         ignored_status_codes: Vec<u16>,
         extra_headers: Vec<(String, String)>,
+        auth: Option<Auth>,
     ) -> Fuzzer {
         Fuzzer {
             schema,
             url,
             extra_headers,
             ignored_status_codes: ignored_status_codes.clone(),
+            auth,
             stats: Stats::new(ignored_status_codes),
             tui: Tui::new().expect("unable to setup tui"),
         }
@@ -96,7 +101,11 @@ impl Fuzzer {
                 let item = ref_or_item.to_item_ref();
                 for payload in Payload::for_all_methods(&self.url, path, item, &self.extra_headers)?
                 {
-                    match self.send_request(&payload) {
+                    let auth_header = match self.auth.as_mut() {
+                        Some(auth_header) => auth_header.access_token(),
+                        None => None,
+                    };
+                    match self.send_request(&payload, auth_header) {
                         Ok(resp) => {
                             self.check_response(&resp, &payload)?;
                             self.stats.update(&resp, &payload);
@@ -116,7 +125,11 @@ impl Fuzzer {
         }
     }
 
-    fn send_request(&self, payload: &Payload) -> Result<ureq::Response> {
+    fn send_request(
+        &self,
+        payload: &Payload,
+        auth_header: Option<Header>,
+    ) -> Result<ureq::Response> {
         let mut path_with_params = payload.path.to_owned();
         for (name, value) in payload.path_params.iter() {
             path_with_params = path_with_params.replace(&format!("{{{}}}", name), value);
@@ -132,6 +145,10 @@ impl Fuzzer {
 
         for (header, value) in payload.headers.iter() {
             request = request.set(header, value)
+        }
+
+        if let Some(auth_header) = auth_header {
+            request = request.set(&auth_header.0, &auth_header.1)
         }
 
         if !payload.body.is_empty() {

@@ -1,9 +1,11 @@
+mod auth;
 mod fuzzer;
 mod payload;
 mod tui;
 
 use anyhow::{Context, Result};
 use argh::FromArgs;
+use auth::{ApiAuth, Auth};
 use fuzzer::Fuzzer;
 use openapi_utils::SpecExt;
 use openapiv3::OpenAPI;
@@ -29,6 +31,14 @@ struct Args {
     /// additional header to send
     #[argh(option, short = 'H')]
     header: Vec<Header>,
+
+    /// auth token generate command
+    #[argh(option, short = 'c')]
+    cmd: String,
+
+    /// auth token type
+    #[argh(option, short = 't')]
+    auth_type: String,
 }
 
 #[derive(Debug)]
@@ -81,12 +91,19 @@ fn main() -> Result<()> {
     let openapi_schema: OpenAPI =
         serde_yaml::from_str(&specfile).context("Failed to parse schema")?;
     let openapi_schema = openapi_schema.deref_all();
+    let auth = if !args.cmd.is_empty() && !args.auth_type.is_empty() {
+        let auth_type = ApiAuth::from_str(&args.auth_type)?;
+        Some(Auth::new(args.cmd, auth_type))
+    } else {
+        None
+    };
 
     Fuzzer::new(
         openapi_schema,
         args.url.into(),
         args.ignore_status_code,
         args.header.into_iter().map(|h| h.into()).collect(),
+        auth,
     )
     .run()
 }
