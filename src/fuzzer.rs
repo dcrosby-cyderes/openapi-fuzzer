@@ -14,7 +14,6 @@ use url::Url;
 use crate::auth::Auth;
 use crate::payload::Payload;
 use crate::tui::Tui;
-use crate::Header;
 
 #[derive(Debug, Default)]
 pub struct Tries {
@@ -96,16 +95,22 @@ impl Fuzzer {
 
     pub fn run(&mut self) -> Result<()> {
         let mut message = None;
+        let mut auth_header;
         loop {
             for (path, ref_or_item) in self.schema.paths.iter() {
                 let item = ref_or_item.to_item_ref();
-                for payload in Payload::for_all_methods(&self.url, path, item, &self.extra_headers)?
+                for mut payload in
+                    Payload::for_all_methods(&self.url, path, item, &self.extra_headers)?
                 {
-                    let auth_header = match self.auth.as_mut() {
-                        Some(auth_header) => auth_header.access_token(),
-                        None => None,
-                    };
-                    match self.send_request(&payload, auth_header) {
+                    if let Some(auth) = self.auth.as_mut() {
+                        auth_header = auth.access_token()?;
+                        if let Some(auth_header) = auth_header.as_ref() {
+                            payload
+                                .headers
+                                .push((auth_header.0.as_str(), auth_header.1.clone()));
+                        }
+                    }
+                    match self.send_request(&payload) {
                         Ok(resp) => {
                             self.check_response(&resp, &payload)?;
                             self.stats.update(&resp, &payload);
@@ -125,11 +130,7 @@ impl Fuzzer {
         }
     }
 
-    fn send_request(
-        &self,
-        payload: &Payload,
-        auth_header: Option<Header>,
-    ) -> Result<ureq::Response> {
+    fn send_request(&self, payload: &Payload) -> Result<ureq::Response> {
         let mut path_with_params = payload.path.to_owned();
         for (name, value) in payload.path_params.iter() {
             path_with_params = path_with_params.replace(&format!("{{{}}}", name), value);
@@ -145,10 +146,6 @@ impl Fuzzer {
 
         for (header, value) in payload.headers.iter() {
             request = request.set(header, value)
-        }
-
-        if let Some(auth_header) = auth_header {
-            request = request.set(&auth_header.0, &auth_header.1)
         }
 
         if !payload.body.is_empty() {

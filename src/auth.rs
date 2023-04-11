@@ -68,7 +68,7 @@ impl Auth {
         }
     }
 
-    pub(crate) fn access_token(&mut self) -> Option<Header> {
+    pub(crate) fn access_token(&mut self) -> Result<Option<Header>> {
         if !self.refresh_cmd.is_empty() {
             match self.get_token() {
                 Ok(t) => {
@@ -77,12 +77,12 @@ impl Auth {
                         String::from("Authorization"),
                         format!("{} {}", auth_type, t),
                     );
-                    Some(header)
+                    Ok(Some(header))
                 }
-                Err(_) => None,
+                Err(e) => Err(e),
             }
         } else {
-            None
+            Ok(None)
         }
     }
 
@@ -93,7 +93,7 @@ impl Auth {
                 LifeSpan::Indefinite => t,
                 LifeSpan::SingleUse => Self::refresh_token(&self.refresh_cmd)?,
                 LifeSpan::Seconds(s) => {
-                    if t.last_refreshed.elapsed().as_secs() > s as u64 / 2 {
+                    if t.last_refreshed.elapsed().as_secs() > (s as u64 / 2) {
                         Self::refresh_token(&self.refresh_cmd)?
                     } else {
                         t
