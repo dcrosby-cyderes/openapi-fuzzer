@@ -34,7 +34,7 @@ struct Args {
 
     /// auth token generate command
     #[argh(option, short = 'c')]
-    cmd: String,
+    auth_command: String,
 
     /// auth token type
     #[argh(option, short = 't')]
@@ -91,9 +91,9 @@ fn main() -> Result<()> {
     let openapi_schema: OpenAPI =
         serde_yaml::from_str(&specfile).context("Failed to parse schema")?;
     let openapi_schema = openapi_schema.deref_all();
-    let auth = if !args.cmd.is_empty() && !args.auth_type.is_empty() {
+    let auth = if !args.auth_command.is_empty() && !args.auth_type.is_empty() {
         let auth_type = ApiAuth::from_str(&args.auth_type)?;
-        Some(Auth::new(args.cmd, auth_type))
+        Some(Auth::new(args.auth_command, auth_type))
     } else {
         None
     };
